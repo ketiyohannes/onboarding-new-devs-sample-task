@@ -1,0 +1,564 @@
+diff --git a/Dockerfile b/Dockerfile
+new file mode 100644
+index 0000000..0a52e74
+--- /dev/null
++++ b/Dockerfile
+@@ -0,0 +1,10 @@
++FROM python:3.11-slim
++
++WORKDIR /app
++
++COPY requirements.txt .
++RUN pip install --no-cache-dir -r requirements.txt
++
++COPY . .
++
++CMD ["python"]
+diff --git a/README.md b/README.md
+index 30c08b5..52fa308 100644
+Binary files a/README.md and b/README.md differ
+diff --git a/docker-compose.yml b/docker-compose.yml
+new file mode 100644
+index 0000000..16ea03b
+--- /dev/null
++++ b/docker-compose.yml
+@@ -0,0 +1,8 @@
++version: "3.9"
++
++services:
++  autodiff:
++    build: .
++    container_name: autodiff_engine
++    volumes:
++      - .:/app
+diff --git a/evaluation.sh b/evaluation.sh
+new file mode 100755
+index 0000000..f24040c
+--- /dev/null
++++ b/evaluation.sh
+@@ -0,0 +1,15 @@
++#!/bin/bash
++
++echo "====================================="
++echo " Running Automatic Differentiation Evaluation "
++echo "====================================="
++
++# Build the Docker image
++docker-compose build
++
++# Run the tests inside the container
++docker-compose run --rm autodiff python -m tests.test_tensor
++
++echo "====================================="
++echo " Evaluation completed successfully "
++echo "====================================="
+diff --git a/evaluation/evaluation.py b/evaluation/evaluation.py
+new file mode 100644
+index 0000000..9b00167
+--- /dev/null
++++ b/evaluation/evaluation.py
+@@ -0,0 +1,170 @@
++#!/usr/bin/env python3
++
++import sys
++import os
++import json
++import uuid
++import platform
++import subprocess
++from pathlib import Path
++from datetime import datetime
++
++ROOT = Path(__file__).resolve().parent.parent
++REPORTS_DIR = ROOT / "evaluation" / "reports"
++TESTS_DIR = ROOT / "tests"
++
++# -------------------------
++# Environment
++# -------------------------
++def run_tests(repo_path: Path, repo_name: str):
++    test_file = TESTS_DIR / "test_tensor.py"
++
++    if not test_file.exists():
++        return {
++            "passed": False,
++            "return_code": -1,
++            "output": f"tests file not found for {repo_name}",
++        }
++    elif not any(repo_path.glob("**/*tensor.py")):
++        
++        return {
++            "passed": False,
++            "return_code": -1,
++            "output": f"tests file not found for {repo_name}",
++        }
++    
++    # Skip tests for empty before repo
++    if repo_name == "repository_before" and (not repo_path.exists() or not any(repo_path.iterdir())):
++        return {
++            "passed": False,
++            "return_code": -1,
++            "output": f"{repo_name} is empty or missing",
++        }
++
++    try:
++        env = dict(os.environ)
++        env["PYTHONPATH"] = str(ROOT)  # <-- Always ROOT, so imports in tests work
++
++        proc = subprocess.run(
++            ["python", str(test_file)],
++            cwd=ROOT,
++            capture_output=True,
++            text=True,
++            timeout=120,
++            env=env,
++        )
++
++        return {
++            "passed": proc.returncode == 0,
++            "return_code": proc.returncode,
++            "output": (proc.stdout + proc.stderr)[:8000],
++        }
++
++    except subprocess.TimeoutExpired:
++        return {
++            "passed": False,
++            "return_code": -1,
++            "output": "test execution timeout",
++        }
++
++    except Exception as e:
++        return {
++            "passed": False,
++            "return_code": -1,
++            "output": f"test execution error: {e}",
++        }
++
++
++# -------------------------
++# Metrics (Optional)
++# -------------------------
++def run_metrics(repo_path: Path):
++    return {}
++
++# -------------------------
++# Repository Evaluation
++# -------------------------
++def evaluate_repo(repo_name: str):
++    repo_path = ROOT / repo_name
++
++    # Handle empty/missing repo gracefully
++    if not repo_path.exists() or not any(repo_path.iterdir()):
++        return {
++            "tests": {
++                "passed": False,
++                "return_code": -1,
++                "output": f"{repo_name} is empty or missing",
++            },
++            "metrics": {},
++        }
++
++    tests_result = run_tests(repo_path, repo_name)  # <-- pass repo_name
++    metrics_result = run_metrics(repo_path)
++
++    return {
++        "tests": tests_result,
++        "metrics": metrics_result,
++    }
++
++
++# -------------------------
++# Core Evaluation
++# -------------------------
++
++def environment_info():
++    return {
++        "python_version": platform.python_version(),
++        "platform": platform.platform(),
++    }
++
++def run_evaluation():
++    run_id = str(uuid.uuid4())
++    started_at = datetime.utcnow()
++
++    before = evaluate_repo("repository_before")
++    after = evaluate_repo("repository_after")
++
++    passed_gate = after["tests"]["passed"]  # only after repo decides success
++
++    comparison = {
++        "passed_gate": passed_gate,
++        "improvement_summary": (
++            "After implementation passed correctness tests"
++            if passed_gate
++            else "After implementation failed correctness tests"
++        ),
++    }
++
++    
++
++    finished_at = datetime.utcnow()
++
++    return {
++        "run_id": run_id,
++        "started_at": started_at.isoformat() + "Z",
++        "finished_at": finished_at.isoformat() + "Z",
++        "duration_seconds": (finished_at - started_at).total_seconds(),
++        "environment": environment_info(), # type: ignore
++        "before": before,
++        "after": after,
++        "comparison": comparison,
++        "success": passed_gate,
++        "error": None,
++    }
++
++# -------------------------
++# Entry Point
++# -------------------------
++def main():
++    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
++
++    report = run_evaluation()
++    report_path = REPORTS_DIR / "latest.json"
++    report_path.write_text(json.dumps(report, indent=2))
++
++    print(f"Evaluation report written to {report_path}")
++
++    return 0 if report["success"] else 1
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/evaluation/reports/latest.json b/evaluation/reports/latest.json
+new file mode 100644
+index 0000000..0e73c8b
+--- /dev/null
++++ b/evaluation/reports/latest.json
+@@ -0,0 +1,32 @@
++{
++  "run_id": "78fec81b-dc90-4856-bdf2-12402ce1b3da",
++  "started_at": "2026-02-09T20:07:14.001965Z",
++  "finished_at": "2026-02-09T20:07:14.025677Z",
++  "duration_seconds": 0.023712,
++  "environment": {
++    "python_version": "3.11.14",
++    "platform": "Linux-6.10.14-linuxkit-x86_64-with-glibc2.41"
++  },
++  "before": {
++    "tests": {
++      "passed": false,
++      "return_code": -1,
++      "output": "repository_before is empty or missing"
++    },
++    "metrics": {}
++  },
++  "after": {
++    "tests": {
++      "passed": true,
++      "return_code": 0,
++      "output": "test_scalar_storage passed\ntest_addition passed\ntest_subtraction passed\ntest_multiplication passed\ntest_division passed\ntest_power passed\ntest_chain_rule passed\ntest_gradient_accumulation passed\ntest_tanh passed\ntest_relu_positive passed\ntest_relu_negative passed\ntest_sigmoid passed\ntest_deep_graph passed\ntest_multiple_paths passed\ntest_backward_on_intermediate passed\nAll test are passed\n"
++    },
++    "metrics": {}
++  },
++  "comparison": {
++    "passed_gate": true,
++    "improvement_summary": "After implementation passed correctness tests"
++  },
++  "success": true,
++  "error": null
++}
+\ No newline at end of file
+diff --git a/repository_after/__pycache__/tensor.cpython-311.pyc b/repository_after/__pycache__/tensor.cpython-311.pyc
+new file mode 100644
+index 0000000..3d32adb
+Binary files /dev/null and b/repository_after/__pycache__/tensor.cpython-311.pyc differ
+diff --git a/repository_after/tensor.py b/repository_after/tensor.py
+new file mode 100644
+index 0000000..b131be3
+--- /dev/null
++++ b/repository_after/tensor.py
+@@ -0,0 +1,100 @@
++import math
++class Tensor:
++    def __init__(self, data, _children=(), _op=""):
++        self.data = float(data)
++        self.grad = 0.0
++
++        self._backward = lambda: None
++        self._prev = set(_children)
++        self._op = _op  
++
++    def __repr__(self):
++        return f"Tensor(data={self.data}, grad={self.grad})"
++
++    def backward(self):
++        topo = []
++        visited = set()
++
++        def build(v):
++            if v not in visited:
++                visited.add(v)
++                for child in v._prev:
++                    build(child)
++                topo.append(v)
++
++        build(self)
++
++        self.grad = 1.0
++        for node in reversed(topo):
++            node._backward()
++
++    def __add__(self, other):
++        other = other if isinstance(other, Tensor) else Tensor(other)
++        out = Tensor(self.data + other.data, (self, other), "+")
++
++        def _backward():
++            self.grad += out.grad
++            other.grad += out.grad
++
++        out._backward = _backward
++        return out
++
++    def __sub__(self, other):
++        return self + (-other)
++
++    def __mul__(self, other):
++        other = other if isinstance(other, Tensor) else Tensor(other)
++        out = Tensor(self.data * other.data, (self, other), "*")
++
++        def _backward():
++            self.grad += other.data * out.grad
++            other.grad += self.data * out.grad
++
++        out._backward = _backward
++        return out
++
++    def __truediv__(self, other):
++        other = other if isinstance(other, Tensor) else Tensor(other)
++        return self * other ** -1
++
++    def __pow__(self, power):
++        out = Tensor(self.data ** power, (self,), f"**{power}")
++
++        def _backward():
++            self.grad += power * (self.data ** (power - 1)) * out.grad
++
++        out._backward = _backward
++        return out
++
++    def __neg__(self):
++        return self * -1
++
++
++    def tanh(self):
++        t = math.tanh(self.data)
++        out = Tensor(t, (self,), "tanh")
++
++        def _backward():
++            self.grad += (1 - t ** 2) * out.grad
++
++        out._backward = _backward
++        return out
++
++    def relu(self):
++        out = Tensor(self.data if self.data > 0 else 0.0, (self,), "relu")
++
++        def _backward():
++            self.grad += (1.0 if self.data > 0 else 0.0) * out.grad
++
++        out._backward = _backward
++        return out
++
++    def sigmoid(self):
++        s = 1 / (1 + math.exp(-self.data))
++        out = Tensor(s, (self,), "sigmoid")
++
++        def _backward():
++            self.grad += s * (1 - s) * out.grad
++
++        out._backward = _backward
++        return out
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/__pycache__/test_tensor.cpython-311.pyc b/tests/__pycache__/test_tensor.cpython-311.pyc
+new file mode 100644
+index 0000000..1f00bf1
+Binary files /dev/null and b/tests/__pycache__/test_tensor.cpython-311.pyc differ
+diff --git a/tests/test_tensor.py b/tests/test_tensor.py
+new file mode 100644
+index 0000000..9befa09
+--- /dev/null
++++ b/tests/test_tensor.py
+@@ -0,0 +1,172 @@
++from repository_after.tensor import Tensor
++import math
++
++
++def test_scalar_storage():
++    x = Tensor(3.5)
++    assert isinstance(x.data, float)
++    assert isinstance(x.grad, float)
++    assert x.grad == 0.0
++    print("test_scalar_storage passed")
++
++
++def test_addition():
++    a = Tensor(2.0)
++    b = Tensor(3.0)
++    c = a + b
++    c.backward()
++    assert c.data == 5.0
++    assert a.grad == 1.0
++    assert b.grad == 1.0
++    print("test_addition passed")
++
++
++def test_subtraction():
++    a = Tensor(5.0)
++    b = Tensor(2.0)
++    c = a - b
++    c.backward()
++    assert c.data == 3.0
++    assert a.grad == 1.0
++    assert b.grad == -1.0
++    print("test_subtraction passed")
++
++
++def test_multiplication():
++    a = Tensor(2.0)
++    b = Tensor(4.0)
++    c = a * b
++    c.backward()
++    assert c.data == 8.0
++    assert a.grad == 4.0
++    assert b.grad == 2.0
++    print("test_multiplication passed")
++
++
++def test_division():
++    a = Tensor(6.0)
++    b = Tensor(3.0)
++    c = a / b
++    c.backward()
++    assert c.data == 2.0
++    assert abs(a.grad - (1.0 / 3.0)) < 1e-6
++    assert abs(b.grad - (-6.0 / 9.0)) < 1e-6
++    print("test_division passed")
++
++
++def test_power():
++    a = Tensor(3.0)
++    c = a ** 2
++    c.backward()
++    assert c.data == 9.0
++    assert a.grad == 6.0
++    print("test_power passed")
++
++
++def test_chain_rule():
++    a = Tensor(2.0)
++    b = Tensor(3.0)
++    c = a * b + a
++    c.backward()
++    assert c.data == 8.0
++    assert a.grad == 4.0
++    assert b.grad == 2.0
++    print("test_chain_rule passed")
++
++
++def test_gradient_accumulation():
++    a = Tensor(2.0)
++    b = a * a
++    c = b + a
++    c.backward()
++    assert a.grad == 5.0
++    print("test_gradient_accumulation passed")
++
++
++def test_tanh():
++    x = Tensor(0.5)
++    y = x.tanh()
++    y.backward()
++    expected = math.tanh(0.5)
++    assert abs(y.data - expected) < 1e-6
++    assert abs(x.grad - (1 - expected ** 2)) < 1e-6
++    print("test_tanh passed")
++
++
++def test_relu_positive():
++    x = Tensor(2.0)
++    y = x.relu()
++    y.backward()
++    assert y.data == 2.0
++    assert x.grad == 1.0
++    print("test_relu_positive passed")
++
++
++def test_relu_negative():
++    x = Tensor(-1.0)
++    y = x.relu()
++    y.backward()
++    assert y.data == 0.0
++    assert x.grad == 0.0
++    print("test_relu_negative passed")
++
++
++def test_sigmoid():
++    x = Tensor(0.0)
++    y = x.sigmoid()
++    y.backward()
++    assert abs(y.data - 0.5) < 1e-6
++    assert abs(x.grad - 0.25) < 1e-6
++    print("test_sigmoid passed")
++
++
++def test_deep_graph():
++    a = Tensor(1.5)
++    b = Tensor(2.0)
++    c = Tensor(3.0)
++    y = ((a * b) + c).tanh() * a
++    y.backward()
++    assert isinstance(a.grad, float)
++    assert isinstance(b.grad, float)
++    assert isinstance(c.grad, float)
++    print("test_deep_graph passed")
++
++
++def test_multiple_paths():
++    a = Tensor(2.0)
++    b = a * a
++    c = a + b
++    d = c * a
++    d.backward()
++    assert a.grad == 16.0
++    print("test_multiple_paths passed")
++
++
++def test_backward_on_intermediate():
++    a = Tensor(2.0)
++    b = Tensor(3.0)
++    c = a * b
++    d = c + b
++    d.backward()
++    assert a.grad == 3.0
++    assert b.grad == 3.0
++    print("test_backward_on_intermediate passed")
++
++
++if __name__ == "__main__":
++    test_scalar_storage()
++    test_addition()
++    test_subtraction()
++    test_multiplication()
++    test_division()
++    test_power()
++    test_chain_rule()
++    test_gradient_accumulation()
++    test_tanh()
++    test_relu_positive()
++    test_relu_negative()
++    test_sigmoid()
++    test_deep_graph()
++    test_multiple_paths()
++    test_backward_on_intermediate()
++    print("All test are passed")
