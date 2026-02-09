@@ -1,159 +1,212 @@
-import sys
 import unittest
 import math
-from pathlib import Path
+import sys
 
-sys.path.append(str(Path(__file__).parent.parent / "repository_after"))
 from scalar_tensor_ad import Tensor
 
-class TestTensor(unittest.TestCase):
+class TestTensorDetailed(unittest.TestCase):
     
-    def test_basic_arithmetic(self):
-        """Test basic op correctness and simple backprop."""
-        # Add
-        x, y = Tensor(3.0), Tensor(2.0)
-        self.assertEqual((x + y).data, 5.0)
-        (x + y).backward(); self.assertEqual(x.grad, 1.0)
-        
-        # Sub
-        x, y = Tensor(5.0), Tensor(3.0)
-        self.assertEqual((x - y).data, 2.0)
-        (x - y).backward(); self.assertEqual(y.grad, -1.0)
-        
-        # Mul
-        x, y = Tensor(4.0), Tensor(3.0)
-        self.assertEqual((x * y).data, 12.0)
-        (x * y).backward(); self.assertEqual(x.grad, 3.0)
-        
-        # Div
-        x, y = Tensor(10.0), Tensor(2.0)
-        self.assertEqual((x / y).data, 5.0)
-        (x / y).backward(); self.assertEqual(y.grad, -2.5)
+    def test_arithmetic_fwd_bwd(self):
+        # Addition
+        a, b = Tensor(1.5), Tensor(2.5)
+        out = a + b
+        self.assertEqual(out.data, 4.0)
+        out.backward()
+        self.assertEqual(a.grad, 1.0)
+        self.assertEqual(b.grad, 1.0)
 
-    def test_r_ops_and_scalars(self):
-        """Test magic methods for scalar interactions (radd, rsub, etc)."""
+        # Subtraction
+        a, b = Tensor(5.0), Tensor(2.0)
+        out = a - b
+        self.assertEqual(out.data, 3.0)
+        out.backward()
+        self.assertEqual(a.grad, 1.0)
+        self.assertEqual(b.grad, -1.0)
+
+        # Multiplication
+        a, b = Tensor(3.0), Tensor(4.0)
+        out = a * b
+        self.assertEqual(out.data, 12.0)
+        out.backward()
+        self.assertEqual(a.grad, 4.0)
+        self.assertEqual(b.grad, 3.0)
+
+        # Division
+        a, b = Tensor(10.0), Tensor(2.0)
+        out = a / b
+        self.assertEqual(out.data, 5.0)
+        out.backward()
+        self.assertEqual(a.grad, 0.5)
+        self.assertEqual(b.grad, -2.5)
+
+    def test_scalar_interactions(self):
+        x = Tensor(4.0)
+        self.assertEqual((x + 1).data, 5.0)
+        self.assertEqual((1 + x).data, 5.0)
+        self.assertEqual((x - 1).data, 3.0)
+        self.assertEqual((5 - x).data, 1.0)
+        self.assertEqual((x * 2).data, 8.0)
+        self.assertEqual((2 * x).data, 8.0)
+        self.assertEqual((x / 2).data, 2.0)
+        self.assertEqual((8 / x).data, 2.0)
+
+        (8 / x).backward()
+        self.assertEqual(x.grad, -0.5)
+
+    def test_power_variants(self):
+        # Integer power
         x = Tensor(2.0)
-        self.assertEqual((3.0 + x).data, 5.0)
-        self.assertEqual((10.0 - x).data, 8.0)
-        self.assertEqual((3.0 * x).data, 6.0)
-        self.assertEqual((1.0 / x).data, 0.5)
-        
-        (1.0 / x).backward()
+        (x ** 3).backward()
+        self.assertEqual(x.grad, 12.0)
+
+        # Fractional power
+        x = Tensor(9.0)
+        (x ** 0.5).backward()
+        self.assertEqual(x.grad, 1/6)
+
+        # Negative power
+        x = Tensor(2.0)
+        (x ** -1).backward()
         self.assertEqual(x.grad, -0.25)
 
-    def test_power(self):
-        """Test power operator and gradients."""
+    def test_activations_detailed(self):
+        # ReLU boundaries
+        for v in [-1.0, 0.0, 1.0]:
+            x = Tensor(v)
+            out = x.relu()
+            self.assertEqual(out.data, max(0.0, v))
+            out.backward()
+            self.assertEqual(x.grad, 1.0 if v > 0.0 else 0.0)
+
+        # Tanh check
+        x = Tensor(0.5)
+        x.tanh().backward()
+        self.assertAlmostEqual(x.grad, 1 - math.tanh(0.5)**2)
+
+        # Sigmoid check
+        x = Tensor(-0.5)
+        s = 1 / (1 + math.exp(0.5))
+        x.sigmoid().backward()
+        self.assertAlmostEqual(x.grad, s * (1 - s))
+
+    def test_multi_path_accumulation(self):
+        # f(x) = x + x + x * x
         x = Tensor(3.0)
-        (x ** 3).backward()
-        self.assertEqual(x.grad, 27.0)
-        
-        y = Tensor(4.0)
-        (y ** 0.5).backward()
-        self.assertEqual(y.grad, 0.25)
+        z = x + x + x * x
+        # dz/dx = 1 + 1 + 2x = 2 + 6 = 8
+        z.backward()
+        self.assertEqual(x.grad, 8.0)
 
-    def test_activations(self):
-        """Test tanh, relu, and sigmoid."""
-        x = Tensor(0.0)
-        self.assertEqual(x.tanh().data, 0.0)
-        self.assertEqual(x.relu().data, 0.0)
-        self.assertEqual(x.sigmoid().data, 0.5)
-        
-        # Grads at 0
-        x = Tensor(0.0); x.tanh().backward();    self.assertEqual(x.grad, 1.0)
-        x = Tensor(0.0); x.relu().backward();    self.assertEqual(x.grad, 0.0)
-        x = Tensor(0.0); x.sigmoid().backward(); self.assertEqual(x.grad, 0.25)
-
-    def test_gradient_accumulation(self):
-        """Verify nodes in multiple paths sum gradients."""
+        # f(x) = (x + 1) * (x + 2)
         x = Tensor(2.0)
-        # y = x^2 + x^3 => dy/dx = 2x + 3x^2 = 4 + 12 = 16
-        y = x**2 + x**3
-        y.backward()
-        self.assertEqual(x.grad, 16.0)
+        z = (x + 1) * (x + 2)
+        # dz/dx = (x+2) + (x+1) = 2x + 3 = 7
+        z.backward()
+        self.assertEqual(x.grad, 7.0)
 
-    def test_complex_graph(self):
-        """Full system test with complex expression."""
-        x = Tensor(-4.0)
-        z = 2 * x + 2 + x
-        q = z.relu() + z.sigmoid()
-        # z = -4*3 + 2 = -10
-        # q = relu(-10) + sig(-10) = 0 + sig(-10)
-        self.assertAlmostEqual(q.data, 1 / (1 + math.exp(10)))
+    def test_shared_subexpression(self):
+        # a = x*y; b = a + x; c = a + y; out = b*c
+        x, y = Tensor(2.0), Tensor(3.0)
+        a = x * y    # 6
+        b = a + x    # 8
+        c = a + y    # 9
+        out = b * c  # 72
+        out.backward()
         
-        q.backward()
-        # dq/dz = (relu' at -10) + (sig' at -10) = 0 + sig(-10)*(1-sig(-10))
-        # dz/dx = 3
-        # dq/dx = 3 * ds_dz
-        s = 1 / (1 + math.exp(10))
-        expected_grad = 3 * (s * (1 - s))
-        self.assertAlmostEqual(x.grad, expected_grad)
+        # da/dx = y=3, da/dy = x=2
+        # db/da = 1, db/dx = 1
+        # dc/da = 1, dc/dy = 1
+        # dout/db = c=9, dout/dc = b=8
+        
+        # dout/da = (dout/db * db/da) + (dout/dc * dc/da) = 9*1 + 8*1 = 17
+        # dout/dx = (dout/db * db/dx) + (dout/da * da/dx) = 9*1 + 17*3 = 9 + 51 = 60
+        # dout/dy = (dout/dc * dc/dy) + (dout/da * da/dy) = 8*1 + 17*2 = 8 + 34 = 42
+        
+        self.assertEqual(x.grad, 60.0)
+        self.assertEqual(y.grad, 42.0)
 
-    def test_numerical_stability(self):
-        """Test extremes and long chains."""
-        # Deep chain: x * 2 * 2 * ...
+    def test_numerical_stability_extreme(self):
+        # Small gradient flow
+        x = Tensor(10.0)
+        y = x.sigmoid() # grad ≈ 0
+        y.backward()
+        self.assertTrue(x.grad < 1e-4)
+
+        # Chain multiplication
         x = Tensor(1.0)
-        y = x
-        for _ in range(5): y = y * 2.0
-        y.backward()
-        self.assertEqual(x.grad, 32.0)
-        
-        # Stability with small numbers
-        x = Tensor(1e-4)
-        y = x.sigmoid()
-        y.backward()
-        self.assertTrue(x.grad > 0)
+        cur = x
+        for _ in range(10):
+            cur = cur * 2.0 # 2^10 = 1024
+        cur.backward()
+        self.assertEqual(x.grad, 1024.0)
 
-    def test_nested_activations(self):
-        """Test chains of activations like relu(tanh(x))."""
-        x = Tensor(0.5)
-        y = x.tanh().relu()
-        y.backward()
-        # dy/dx = relu'(tanh(x)) * tanh'(x)
-        # since tanh(0.5) > 0, relu'(...) = 1
-        # dy/dx = 1 * (1 - tanh(0.5)^2)
-        expected = 1 - math.tanh(0.5)**2
-        self.assertAlmostEqual(x.grad, expected)
+    def test_graph_attributes(self):
+        x = Tensor(1.0)
+        y = Tensor(2.0)
+        z = x + y
+        self.assertEqual(z.op, "+")
+        self.assertIn(x, z._prev)
+        self.assertIn(y, z._prev)
+        self.assertTrue("Tensor" in repr(z))
 
-    def test_misc_coverage(self):
-        """Ensure __repr__ and other minor methods are covered."""
-        t = Tensor(1.0)
-        self.assertIn("data=1.0000", repr(t))
-        # Topological order stability check (diamond)
-        a = Tensor(2.0)
-        b, c = a*2, a*3
-        (b + c).backward()
-        self.assertEqual(a.grad, 5.0)
-
-    def test_edge_cases_and_nesting(self):
-        """Ultra-detailed edge cases for every operation."""
-        # x - x grad check
-        x = Tensor(5.0)
-        z = x - x
-        z.backward()
-        self.assertEqual(x.grad, 0.0) # 1 - 1 = 0
-        
-        # x / x grad check
-        x = Tensor(5.0)
-        z = x / x
-        z.backward()
-        # d(x/x)/dx = (1 * x - x * 1) / x^2 = 0
-        self.assertEqual(x.grad, 0.0)
-        
-        # Power of Power
+    def test_reverse_ops_detailed(self):
+        # 5.0 - x
         x = Tensor(2.0)
-        z = (x ** 2) ** 3 # x^6
+        z = 5.0 - x
+        self.assertEqual(z.data, 3.0)
         z.backward()
-        # dz/dx = 6 * x^5 = 6 * 32 = 192
-        self.assertEqual(x.grad, 192.0)
+        self.assertEqual(x.grad, -1.0)
         
-        # Nested Activations with Arithmetic
-        x = Tensor(0.5)
-        z = (x.sigmoid() * 2.0).relu()
+        # 10.0 / x
+        x = Tensor(2.0)
+        z = 10.0 / x
+        self.assertEqual(z.data, 5.0)
         z.backward()
-        # s = sig(0.5). z = 2*s if 2*s>0 else 0.
-        # dz/dx = relu'(2*s) * 2 * sig'(0.5) = 1 * 2 * s * (1-s)
-        s = 1 / (1 + math.exp(-0.5))
-        self.assertAlmostEqual(x.grad, 2 * s * (1 - s))
+        # dz/dx = -10/x^2 = -10/4 = -2.5
+        self.assertEqual(x.grad, -2.5)
 
-if __name__ == '__main__':
+    def test_middle_node_backward(self):
+        # x -> a -> out
+        x = Tensor(2.0)
+        a = x * 3.0
+        out = a.relu()
+        # call backward on 'a' instead of 'out'
+        a.backward()
+        self.assertEqual(x.grad, 3.0)
+        # 'out' grad should still be 0.0 as it's downstream
+        self.assertEqual(out.grad, 0.0)
+
+    def test_gradient_reset_accumulation(self):
+        # Check that we can manually zero grad and re-run
+        x = Tensor(2.0)
+        y = x * x
+        y.backward()
+        self.assertEqual(x.grad, 4.0)
+        
+        # Another backward adds to it (standard behavior for this engine)
+        y.backward()
+        self.assertEqual(x.grad, 8.0)
+        
+        # Manual reset
+        x.grad = 0.0
+        y.backward()
+        self.assertEqual(x.grad, 4.0)
+
+    def test_complex_nesting(self):
+        # f(x, y) = tanh( x*y + sigmoid(x) )
+        x, y = Tensor(0.5), Tensor(1.0)
+        z = (x * y + x.sigmoid()).tanh()
+        z.backward()
+        
+        # Manual check
+        # s = sig(0.5) = 0.622459
+        # arg = 0.5 * 1.0 + s = 1.122459
+        # val = tanh(1.122459) = 0.8084
+        # dz/darg = 1 - tanh(arg)^2 = 1 - 0.6535 = 0.3465
+        # darg/dx = y + sig'(x) = 1.0 + s*(1-s) = 1.0 + 0.235 = 1.235
+        # dz/dx = 0.3465 * 1.235 = 0.4279
+        self.assertAlmostEqual(z.data, math.tanh(0.5 + 1/(1+math.exp(-0.5))), places=5)
+        self.assertAlmostEqual(x.grad, (1 - math.tanh(0.5 + 1/(1+math.exp(-0.5)))**2) * (1.0 + (1/(1+math.exp(-0.5))) * (1 - 1/(1+math.exp(-0.5)))), places=5)
+
+if __name__ == "__main__":
     unittest.main()
