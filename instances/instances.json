@@ -1,0 +1,9 @@
+[
+    {
+        "instance_id": "scalar_tensor_ad_001",
+        "prompt": "Refactor AutoDiff Engine to comply with ByteDance Model Training Handbook.",
+        "repo": "onboarding-new-devs-sample-task",
+        "base_commit": "initial",
+        "hints_text": "Ensure determinism in backward(), add type hints, and pedagogical docstrings."
+    }
+]

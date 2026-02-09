@@ -1,4 +1,10 @@
-FROM python:3.9
+FROM python:3.9-slim
+
 WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt || true
+
 COPY . .
-RUN pip install -r requirements.txt
+
+CMD ["python", "repository_after/scalar_tensor_ad.py"]
