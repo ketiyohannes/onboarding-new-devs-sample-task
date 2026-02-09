@@ -1,0 +1,11 @@
+version: "3.8"
+
+services:
+  evaluator:
+    build: .
+    container_name: eval_container
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    environment:
+      - PYTHONPATH=/workspace
