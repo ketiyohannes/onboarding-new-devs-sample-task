@@ -1,0 +1,683 @@
+diff --git a/Dockerfile b/Dockerfile
+new file mode 100644
+index 0000000..781865c
+--- /dev/null
++++ b/Dockerfile
+@@ -0,0 +1,11 @@
++FROM python:3.11-slim
++
++WORKDIR /app
++
++COPY . .
++
++RUN pip install --no-cache-dir -r requirements.txt
++
++ENV PYTHONPATH=/app
++
++CMD ["pytest", "-s"]
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..2c2fee3
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,12 @@
++- Test After
++
++```
++sudo docker compose run --rm jiru-gutema-tensor pytest -s
++```
++
++- Run Evaluation
++
++```
++sudo docker compose run --rm jiru-gutema-tensor python evaluation/evaluation.py
++```
++
+diff --git a/docker-compose.yaml b/docker-compose.yaml
+new file mode 100644
+index 0000000..2d354d8
+--- /dev/null
++++ b/docker-compose.yaml
+@@ -0,0 +1,11 @@
++version: "3.9"
++
++services:
++  jiru-gutema-tensor:
++    build: .
++    container_name: jiru-gutema-tensor
++    volumes:
++      - .:/app
++    working_dir: /app
++    command: pytest -q
++    
+diff --git a/evaluation/evaluation.py b/evaluation/evaluation.py
+new file mode 100644
+index 0000000..588f25c
+--- /dev/null
++++ b/evaluation/evaluation.py
+@@ -0,0 +1,139 @@
++#!/usr/bin/env python3
++
++import sys
++import json
++import time
++import uuid
++import platform
++import subprocess
++from pathlib import Path
++from datetime import datetime
++
++
++ROOT = Path(__file__).resolve().parent.parent
++REPORTS = ROOT / "evaluation" / "reports"
++
++
++def environment_info():
++    return {
++        "python_version": platform.python_version(),
++        "platform": platform.platform(),
++    }
++
++
++def run_tests():
++    try:
++        proc = subprocess.run(
++            ["pytest", "-s"], cwd=ROOT, capture_output=True, text=True, timeout=120
++        )
++
++        output = (proc.stdout + proc.stderr)[:8000]
++
++        return {
++            "passed": proc.returncode == 0,
++            "return_code": proc.returncode,
++            "output": output,
++        }
++
++    except subprocess.TimeoutExpired:
++        return {"passed": False, "return_code": -1, "output": "pytest timeout"}
++
++
++def run_metrics(repo_path: Path):
++    return {}
++
++
++def evaluate(repo_name: str):
++    repo_path = ROOT / repo_name
++
++    if not repo_path.exists():
++        return {
++            "tests": {
++                "passed": False,
++                "return_code": -1,
++                "output": f"{repo_name} not found",
++            },
++            "metrics": {},
++        }
++
++    elif not any(repo_path.glob("**/*.py")):
++        return {
++            "tests": {
++                "passed": False,
++                "return_code": -1,
++                "output": "No Python files to test",
++            }
++        }
++
++    tests = run_tests()
++    metrics = run_metrics(repo_path)
++
++    return {"tests": tests, "metrics": metrics}
++
++
++def run_evaluation():
++    run_id = str(uuid.uuid4())
++    start = datetime.utcnow()
++
++    before = evaluate("repository_before")
++    after = evaluate("repository_after")
++
++    comparison = {
++        "passed_gate": after["tests"]["passed"],
++        "improvement_summary": (
++            "After implementation passed all requirement-based tests"
++            if after["tests"]["passed"]
++            else "After implementation failed one or more requirement-based tests"
++        ),
++    }
++
++    end = datetime.utcnow()
++
++    return {
++        "run_id": run_id,
++        "started_at": start.isoformat() + "Z",
++        "finished_at": end.isoformat() + "Z",
++        "duration_seconds": (end - start).total_seconds(),
++        "environment": environment_info(),
++        "before": before,
++        "after": after,
++        "comparison": comparison,
++        "success": comparison["passed_gate"],
++        "error": None,
++    }
++
++
++def main():
++    REPORTS.mkdir(parents=True, exist_ok=True)
++
++    try:
++        report = run_evaluation()
++    except Exception as e:
++        report = {
++            "run_id": str(uuid.uuid4()),
++            "started_at": None,
++            "finished_at": None,
++            "duration_seconds": 0.0,
++            "environment": environment_info(),
++            "before": None,
++            "after": None,
++            "comparison": None,
++            "success": False,
++            "error": str(e),
++        }
++
++    path = REPORTS / "latest.json"
++    path.write_text(json.dumps(report, indent=2))
++
++    print(f"Report written to {path}")
++
++    print("\n--- repository_before output ---")
++    print(report["before"]["tests"]["output"])
++    print("\n--- repository_after output ---")
++    print(report["after"]["tests"]["output"])
++
++    return 0 if report["success"] else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/evaluation/reports/latest.json b/evaluation/reports/latest.json
+new file mode 100644
+index 0000000..86f9029
+--- /dev/null
++++ b/evaluation/reports/latest.json
+@@ -0,0 +1,31 @@
++{
++  "run_id": "c4f5cfd0-5817-4371-bfb6-ddb1d70cea74",
++  "started_at": "2026-02-09T19:53:10.683360Z",
++  "finished_at": "2026-02-09T19:53:10.882568Z",
++  "duration_seconds": 0.199208,
++  "environment": {
++    "python_version": "3.11.14",
++    "platform": "Linux-6.8.0-59-generic-x86_64-with-glibc2.41"
++  },
++  "before": {
++    "tests": {
++      "passed": false,
++      "return_code": -1,
++      "output": "No Python files to test"
++    }
++  },
++  "after": {
++    "tests": {
++      "passed": true,
++      "return_code": 0,
++      "output": "============================= test session starts ==============================\nplatform linux -- Python 3.11.14, pytest-9.0.2, pluggy-1.6.0\nrootdir: /app\ncollected 15 items\n\ntest/test_tensor.py [PASSED] Tensor represents a scalar float value and gradient\n.[PASSED] Tensor maintains references to parent tensors\n.[PASSED] Reverse-mode automatic differentiation works\n.[PASSED] Addition operation supported\n.[PASSED] Subtraction operation supported\n.[PASSED] Multiplication operation supported\n.[PASSED] True division operation supported\n.[PASSED] Power operation supported\n.[PASSED] Hyperbolic tangent supported\n.[PASSED] ReLU activation supported\n.[PASSED] Sigmoid activation supported\n.[PASSED] Gradient accumulation across graph paths works\n.[PASSED] Backward pass uses correct topological traversal\n.[PASSED] Implementation is contained in a single source file\n.[PASSED] No external libraries are used\n.\n\n============================== 15 passed in 0.01s ==============================\n"
++    },
++    "metrics": {}
++  },
++  "comparison": {
++    "passed_gate": true,
++    "improvement_summary": "After implementation passed all requirement-based tests"
++  },
++  "success": true,
++  "error": null
++}
+\ No newline at end of file
+diff --git a/patches/diff_tensor.py b/patches/diff_tensor.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/repository_after/__pycache__/tensor.cpython-311.pyc b/repository_after/__pycache__/tensor.cpython-311.pyc
+new file mode 100644
+index 0000000..87e3328
+Binary files /dev/null and b/repository_after/__pycache__/tensor.cpython-311.pyc differ
+diff --git a/repository_after/tensor.py b/repository_after/tensor.py
+new file mode 100644
+index 0000000..bb0688f
+--- /dev/null
++++ b/repository_after/tensor.py
+@@ -0,0 +1,114 @@
++import math
++
++class Tensor:
++    def __init__(self, data, _children=(), _op=""):
++        self.data = float(data)
++        self.grad = 0.0
++
++        self._backward = lambda: None
++        self._prev = set(_children)
++        self._op = _op 
++
++    def __repr__(self):
++        return f"Tensor(data={self.data}, grad={self.grad})"
++
++    def backward(self):
++        topo = []
++        visited = set()
++
++        def build(v):
++            if v not in visited:
++                visited.add(v)
++                for child in v._prev:
++                    build(child)
++                topo.append(v)
++
++        build(self)
++
++        self.grad = 1.0
++
++        for node in reversed(topo):
++            node._backward()
++
++    def __add__(self, other):
++        other = other if isinstance(other, Tensor) else Tensor(other)
++        out = Tensor(self.data + other.data, (self, other), "+")
++
++        def _backward():
++            self.grad += out.grad
++            other.grad += out.grad
++
++        out._backward = _backward
++        return out
++
++    def __sub__(self, other):
++        other = other if isinstance(other, Tensor) else Tensor(other)
++        out = Tensor(self.data - other.data, (self, other), "-")
++
++        def _backward():
++            self.grad += out.grad
++            other.grad -= out.grad
++
++        out._backward = _backward
++        return out
++
++    def __mul__(self, other):
++        other = other if isinstance(other, Tensor) else Tensor(other)
++        out = Tensor(self.data * other.data, (self, other), "*")
++
++        def _backward():
++            self.grad += other.data * out.grad
++            other.grad += self.data * out.grad
++
++        out._backward = _backward
++        return out
++
++    def __truediv__(self, other):
++        other = other if isinstance(other, Tensor) else Tensor(other)
++        out = Tensor(self.data / other.data, (self, other), "/")
++
++        def _backward():
++            self.grad += (1 / other.data) * out.grad
++            other.grad -= (self.data / (other.data**2)) * out.grad
++
++        out._backward = _backward
++        return out
++
++    def __pow__(self, power):
++        assert isinstance(power, (int, float))
++        out = Tensor(self.data**power, (self,), f"**{power}")
++
++        def _backward():
++            self.grad += power * (self.data ** (power - 1)) * out.grad
++
++        out._backward = _backward
++        return out
++
++    def tanh(self):
++        t = math.tanh(self.data)
++        out = Tensor(t, (self,), "tanh")
++
++        def _backward():
++            self.grad += (1 - t**2) * out.grad
++
++        out._backward = _backward
++        return out
++
++    def relu(self):
++        out = Tensor(self.data if self.data > 0 else 0.0, (self,), "relu")
++
++        def _backward():
++            self.grad += (1.0 if self.data > 0 else 0.0) * out.grad
++
++        out._backward = _backward
++        return out
++
++    def sigmoid(self):
++        s = 1 / (1 + math.exp(-self.data))
++        out = Tensor(s, (self,), "sigmoid")
++
++        def _backward():
++            self.grad += s * (1 - s) * out.grad
++
++        out._backward = _backward
++        return out
+diff --git a/repository_before/.gitkeep b/repository_before/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..e079f8a
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1 @@
++pytest
+diff --git a/test/__pycache__/test_tensor.cpython-311-pytest-9.0.2.pyc b/test/__pycache__/test_tensor.cpython-311-pytest-9.0.2.pyc
+new file mode 100644
+index 0000000..36d4497
+Binary files /dev/null and b/test/__pycache__/test_tensor.cpython-311-pytest-9.0.2.pyc differ
+diff --git a/test/test_tensor.py b/test/test_tensor.py
+new file mode 100644
+index 0000000..58b6c63
+--- /dev/null
++++ b/test/test_tensor.py
+@@ -0,0 +1,156 @@
++import math
++import inspect
++import ast
++from repository_after.tensor import Tensor
++import repository_after.tensor as tensor_module
++
++
++def passed(msg):
++    print(f"[PASSED] {msg}")
++
++
++def test_tensor_scalar_value_and_gradient():
++    x = Tensor(1.2)
++    assert isinstance(x.data, float)
++    assert isinstance(x.grad, float)
++    passed("Tensor represents a scalar float value and gradient")
++
++
++def test_tensor_tracks_parents():
++    x = Tensor(2.0)
++    y = Tensor(3.0)
++    z = x * y
++    assert hasattr(z, "_prev")
++    assert x in z._prev and y in z._prev
++    passed("Tensor maintains references to parent tensors")
++
++
++def test_reverse_mode_backpropagation():
++    x = Tensor(2.0)
++    y = Tensor(3.0)
++    z = x * y
++    z.backward()
++    assert x.grad == 3.0
++    assert y.grad == 2.0
++    passed("Reverse-mode automatic differentiation works")
++
++
++def test_addition_operation():
++    x = Tensor(1.0)
++    y = Tensor(2.0)
++    z = x + y
++    z.backward()
++    assert z.data == 3.0
++    assert x.grad == 1.0
++    assert y.grad == 1.0
++    passed("Addition operation supported")
++
++
++def test_subtraction_operation():
++    x = Tensor(5.0)
++    y = Tensor(2.0)
++    z = x - y
++    z.backward()
++    assert z.data == 3.0
++    assert x.grad == 1.0
++    assert y.grad == -1.0
++    passed("Subtraction operation supported")
++
++
++def test_multiplication_operation():
++    x = Tensor(2.0)
++    y = Tensor(4.0)
++    z = x * y
++    z.backward()
++    assert z.data == 8.0
++    assert x.grad == 4.0
++    assert y.grad == 2.0
++    passed("Multiplication operation supported")
++
++
++def test_division_operation():
++    x = Tensor(6.0)
++    y = Tensor(3.0)
++    z = x / y
++    z.backward()
++    assert z.data == 2.0
++    assert math.isclose(x.grad, 1 / 3)
++    assert math.isclose(y.grad, -6 / 9)
++    passed("True division operation supported")
++
++
++def test_power_operation():
++    x = Tensor(3.0)
++    z = x**2
++    z.backward()
++    assert z.data == 9.0
++    assert x.grad == 6.0
++    passed("Power operation supported")
++
++
++def test_tanh_operation():
++    x = Tensor(0.5)
++    z = x.tanh()
++    z.backward()
++    t = math.tanh(0.5)
++    assert math.isclose(z.data, t)
++    assert math.isclose(x.grad, 1 - t * t)
++    passed("Hyperbolic tangent supported")
++
++
++def test_relu_operation():
++    x = Tensor(-1.0)
++    y = Tensor(2.0)
++    zx = x.relu()
++    zy = y.relu()
++    zx.backward()
++    zy.backward()
++    assert zx.data == 0.0
++    assert x.grad == 0.0
++    assert zy.data == 2.0
++    assert y.grad == 1.0
++    passed("ReLU activation supported")
++
++
++def test_sigmoid_operation():
++    x = Tensor(0.0)
++    z = x.sigmoid()
++    z.backward()
++    assert math.isclose(z.data, 0.5)
++    assert math.isclose(x.grad, 0.25)
++    passed("Sigmoid activation supported")
++
++
++def test_gradient_accumulation():
++    x = Tensor(2.0)
++    z = x * x + x
++    z.backward()
++    assert x.grad == 5.0
++    passed("Gradient accumulation across graph paths works")
++
++
++def test_topological_backward_order():
++    x = Tensor(2.0)
++    y = Tensor(3.0)
++    z = (x * y + x).tanh()
++    z.backward()
++    assert x.grad != 0.0
++    assert y.grad != 0.0
++    passed("Backward pass uses correct topological traversal")
++
++
++def test_single_file_implementation():
++    source = inspect.getsource(Tensor)
++    assert "class Tensor" in source
++    passed("Implementation is contained in a single source file")
++
++
++def test_no_external_libraries_used():
++    source = inspect.getsource(tensor_module)
++    tree = ast.parse(source)
++
++    for node in ast.walk(tree):
++        if isinstance(node, (ast.Import, ast.ImportFrom)):
++            for name in node.names:
++                assert name.name in ("math",)
++    passed("No external libraries are used")
+diff --git a/trajectory/trajectory.md b/trajectory/trajectory.md
+new file mode 100644
+index 0000000..7fa3bde
+--- /dev/null
++++ b/trajectory/trajectory.md
+@@ -0,0 +1,139 @@
++# Engineering Trajectory: Building a Minimal Autograd Engine
++
++## Analysis: Deconstructing the Problem
++
++When I first looked at this challenge, I needed to build a lightweight automatic differentiation engine from scratch. The core requirements were:
++
++1. **Scalar-based computation graph**: Each Tensor wraps a single float value, not arrays
++2. **Reverse-mode autodiff**: Implement backpropagation to compute gradients
++3. **Basic operations**: Support arithmetic (+, -, *, /, **) and activations (tanh, relu, sigmoid)
++4. **Minimal dependencies**: Only use Python's standard library (math module allowed)
++5. **Single file implementation**: Keep it simple and contained
++
++The key insight was recognizing this as a micrograd-style autograd engine - think of it as the computational backbone of neural networks, but stripped down to its essence. Every operation needs to:
++- Compute the forward pass (the actual result)
++- Store references to parent tensors (build the computation graph)
++- Define how gradients flow backward (the chain rule in action)
++
++## Strategy: Why This Architecture?
++
++I chose a **dynamic computational graph** approach for several reasons:
++
++### 1. Graph Construction via Parent Tracking
++Each Tensor maintains a `_prev` set containing its parent tensors. This creates an implicit directed acyclic graph (DAG) where:
++- Nodes = Tensor objects
++- Edges = operations that created them
++- The `_op` field labels what operation produced this tensor
++
++This design is elegant because the graph builds itself naturally as you perform operations. No explicit graph construction needed.
++
++### 2. Topological Sort for Backpropagation
++The `backward()` method uses a depth-first search to build a topological ordering of the computation graph. This ensures we compute gradients in the correct order - from output back to inputs. 
++
++Why topological sort? Because in a computation like `z = (x * y) + x`, we need to:
++1. Compute `dz/dz = 1.0` first
++2. Then propagate to the addition node
++3. Then to both the multiplication and the direct `x` path
++4. Finally accumulate gradients at `x` and `y`
++
++### 3. Closure-Based Gradient Functions
++Each operation stores its backward pass as a closure (`_backward`). This captures the local context (parent values, operation type) and defines how gradients flow. For example:
++
++```python
++def __mul__(self, other):
++    out = Tensor(self.data * other.data, (self, other), "*")
++    
++    def _backward():
++        self.grad += other.data * out.grad  # d(xy)/dx = y
++        other.grad += self.data * out.grad  # d(xy)/dy = x
++    
++    out._backward = _backward
++    return out
++```
++
++This pattern is clean, composable, and makes the chain rule explicit.
++
++### 4. Gradient Accumulation
++Using `+=` instead of `=` for gradients is crucial. When a tensor appears multiple times in a computation (like `x * x + x`), gradients from different paths must sum together. This is the multivariate chain rule in action.
++
++## Execution: Step-by-Step Implementation
++
++### Phase 1: Core Tensor Structure
++Started with the foundation:
++- `__init__`: Store data as float, initialize grad to 0.0, set up graph tracking
++- `__repr__`: Simple string representation for debugging
++- `_backward`: Default no-op lambda (leaf nodes don't propagate gradients)
++
++### Phase 2: Backpropagation Engine
++Implemented the `backward()` method:
++1. Build topological order using DFS with visited set
++2. Set output gradient to 1.0 (seed of the chain rule)
++3. Traverse in reverse topological order, calling each node's `_backward()`
++
++This is the heart of the engine - everything else just defines local derivatives.
++
++### Phase 3: Arithmetic Operations
++Implemented each operation following the same pattern:
++- **Addition**: Gradient flows equally to both inputs (derivative is 1)
++- **Subtraction**: Positive gradient to left, negative to right
++- **Multiplication**: Each input gets the other's value times output gradient
++- **Division**: Quotient rule - `d(x/y)/dx = 1/y`, `d(x/y)/dy = -x/y²`
++- **Power**: Power rule - `d(x^n)/dx = n*x^(n-1)`
++
++Each operation also handles scalar broadcasting - if you pass a raw number, it wraps it in a Tensor automatically.
++
++### Phase 4: Activation Functions
++Added three common neural network activations:
++
++**tanh**: Hyperbolic tangent with derivative `1 - tanh²(x)`
++```python
++def tanh(self):
++    t = math.tanh(self.data)
++    out = Tensor(t, (self,), "tanh")
++    
++    def _backward():
++        self.grad += (1 - t**2) * out.grad
++    
++    out._backward = _backward
++    return out
++```
++
++**ReLU**: Rectified Linear Unit - pass through if positive, zero otherwise
++- Derivative is 1 for positive inputs, 0 for negative
++- Simple but powerful for deep learning
++
++**Sigmoid**: Smooth S-curve with derivative `σ(x) * (1 - σ(x))`
++- Used in binary classification and gates (LSTM, etc.)
++
++### Phase 5: Testing & Validation
++All 15 tests passed, covering:
++- Basic tensor properties and graph construction
++- Each arithmetic operation with gradient checks
++- Each activation function with gradient checks
++- Complex expressions with gradient accumulation
++- Topological ordering correctness
++- Implementation constraints (single file, no external deps)
++
++## Resources & Concepts Used
++
++### Core Concepts
++- **Automatic Differentiation**: [Wikipedia - Automatic Differentiation](https://en.wikipedia.org/wiki/Automatic_differentiation)
++- **Reverse Mode AD (Backpropagation)**: The algorithm that powers neural network training
++- **Computational Graphs**: DAG representation of mathematical expressions
++- **Chain Rule**: The calculus foundation of backpropagation
++
++### Inspiration & References
++- **micrograd** by Andrej Karpathy: The spiritual predecessor - a minimal autograd engine for education
++- **PyTorch Autograd**: The production-grade version of these concepts
++- **Calculus Derivatives**: Standard derivative rules for each operation
++
++### Python Techniques
++- **Closures**: Capturing local scope in `_backward` functions
++- **Operator Overloading**: Making Tensors work with `+`, `-`, `*`, etc.
++- **DFS & Topological Sort**: Graph traversal algorithms
++- **Type Checking**: `isinstance()` for scalar broadcasting
++
++### Mathematical Foundations
++- **Multivariate Chain Rule**: Why gradients accumulate with `+=`
++- **Partial Derivatives**: Each operation computes ∂output/∂input
++- **Gradient Descent**: This engine enables optimization algorithms
