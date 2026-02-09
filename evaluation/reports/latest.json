@@ -1,8 +1,8 @@
 {
-  "run_id": "909086f0-1d42-4a41-b721-f6909835ba1d",
-  "started_at": "2026-02-09T18:26:29.511722Z",
-  "finished_at": "2026-02-09T18:26:29.805807Z",
-  "duration_seconds": 0.294085,
+  "run_id": "94cace05-2d7d-45ea-9dbd-00f84217700a",
+  "started_at": "2026-02-09T19:38:02.866232Z",
+  "finished_at": "2026-02-09T19:38:03.067562Z",
+  "duration_seconds": 0.20133,
   "environment": {
     "python_version": "3.11.14",
     "platform": "Linux-6.8.0-59-generic-x86_64-with-glibc2.41"
@@ -11,15 +11,14 @@
     "tests": {
       "passed": false,
       "return_code": -1,
-      "output": "repository_before not found"
-    },
-    "metrics": {}
+      "output": "No Python files to test"
+    }
   },
   "after": {
     "tests": {
       "passed": true,
       "return_code": 0,
-      "output": "============================= test session starts ==============================\nplatform linux -- Python 3.11.14, pytest-9.0.2, pluggy-1.6.0\nrootdir: /app\ncollected 15 items\n\ntest/test_tensor.py [PASSED] Tensor represents a scalar float value and gradient\n.[PASSED] Tensor maintains references to parent tensors\n.[PASSED] Reverse-mode automatic differentiation works\n.[PASSED] Addition operation supported\n.[PASSED] Subtraction operation supported\n.[PASSED] Multiplication operation supported\n.[PASSED] True division operation supported\n.[PASSED] Power operation supported\n.[PASSED] Hyperbolic tangent supported\n.[PASSED] ReLU activation supported\n.[PASSED] Sigmoid activation supported\n.[PASSED] Gradient accumulation across graph paths works\n.[PASSED] Backward pass uses correct topological traversal\n.[PASSED] Implementation is contained in a single source file\n.[PASSED] No external libraries are used\n.\n\n============================== 15 passed in 0.02s ==============================\n"
+      "output": "============================= test session starts ==============================\nplatform linux -- Python 3.11.14, pytest-9.0.2, pluggy-1.6.0\nrootdir: /app\ncollected 15 items\n\ntest/test_tensor.py [PASSED] Tensor represents a scalar float value and gradient\n.[PASSED] Tensor maintains references to parent tensors\n.[PASSED] Reverse-mode automatic differentiation works\n.[PASSED] Addition operation supported\n.[PASSED] Subtraction operation supported\n.[PASSED] Multiplication operation supported\n.[PASSED] True division operation supported\n.[PASSED] Power operation supported\n.[PASSED] Hyperbolic tangent supported\n.[PASSED] ReLU activation supported\n.[PASSED] Sigmoid activation supported\n.[PASSED] Gradient accumulation across graph paths works\n.[PASSED] Backward pass uses correct topological traversal\n.[PASSED] Implementation is contained in a single source file\n.[PASSED] No external libraries are used\n.\n\n============================== 15 passed in 0.01s ==============================\n"
     },
     "metrics": {}
   },

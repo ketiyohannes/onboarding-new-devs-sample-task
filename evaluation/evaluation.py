@@ -2,6 +2,7 @@
 
 import sys
 import json
+import time
 import uuid
 import platform
 import subprocess
@@ -53,6 +54,15 @@ def evaluate(repo_name: str):
                 "output": f"{repo_name} not found",
             },
             "metrics": {},
+        }
+
+    elif not any(repo_path.glob("**/*.py")):
+        return {
+            "tests": {
+                "passed": False,
+                "return_code": -1,
+                "output": "No Python files to test",
+            }
         }
 
     tests = run_tests()
@@ -116,6 +126,11 @@ def main():
     path.write_text(json.dumps(report, indent=2))
 
     print(f"Report written to {path}")
+
+    print("\n--- repository_before output ---")
+    print(report["before"]["tests"]["output"])
+    print("\n--- repository_after output ---")
+    print(report["after"]["tests"]["output"])
 
     return 0 if report["success"] else 1
 
