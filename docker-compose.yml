@@ -1,0 +1,8 @@
+version: "3.9"
+
+services:
+  autodiff:
+    build: .
+    container_name: autodiff_engine
+    volumes:
+      - .:/app
