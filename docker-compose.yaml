@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  jiru-gutema-tensor:
+    build: .
+    container_name: jiru-gutema-tensor
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: pytest -q
+    
