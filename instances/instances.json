@@ -1,0 +1,19 @@
+{
+  "problem_statement": "Build a minimal automatic differentiation engine in Python for educational purposes. The system should model scalar-valued tensors that can participate in mathematical operations while automatically constructing a computational graph. Using this graph, the system must support backpropagation to compute gradients with respect to each tensor involved in a computation.",
+  "base_commit": "repository_before",
+  "FAIL_TO_PASS": [
+    "test_basic_operations",
+    "test_addition_gradient",
+    "test_multiplication_gradient",
+    "test_power_gradient",
+    "test_division_gradient",
+    "test_tanh",
+    "test_relu",
+    "test_sigmoid",
+    "test_complex_expression",
+    "test_gradient_accumulation",
+    "test_chain_rule",
+    "test_scalar_operations"
+  ],
+  "PASS_TO_PASS": []
+}

@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  before:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+    working_dir: /app/repository_before
+    command: echo "Repository before state - no implementation yet"
+    
+  after:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+    working_dir: /app/repository_after
+    command: python -c "from tensor import Tensor; print('Ground Truth implementation loaded successfully')"
+    
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: python -m pytest tests/ -v
