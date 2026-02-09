@@ -74,7 +74,7 @@ def run_evaluation():
     start = datetime.utcnow()
     
     print("\n" + "="*60)
-    print("AUTOMATIC DIFFERENTIATION ENGINE - EVALUATION REPORT")
+    print("AUTOMATIC GENERATED  - EVALUATION REPORT")
     print("="*60 + "\n")
     
 
@@ -82,7 +82,7 @@ def run_evaluation():
     after = evaluate("repository_after")
     
     passed_gate = after["tests"]["passed"]
-    improvement = "Refactored code passed all correctness gates." if passed_gate else "Refactored code failed correctness gate."
+    improvement = "The code passed correctness." if passed_gate else "The code failed correctness."
     
     comparison = {
         "passed_gate": passed_gate,
